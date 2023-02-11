@@ -2,6 +2,7 @@ package com.example.oauth2WithJwt.config.jwt.service;
 
 import com.auth0.jwt.JWT;
 import com.auth0.jwt.algorithms.Algorithm;
+import com.example.oauth2WithJwt.domain.User;
 import com.example.oauth2WithJwt.repository.UserRepo;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
@@ -156,11 +157,14 @@ public class JwtService {
      * RefreshToken DB 저장(업데이트)
      */
     public void updateRefreshToken(String username, String refreshToken) {
-        userRepository.findByUsername(username)
-                .ifPresentOrElse(
-                        user -> user.updateRefreshToken(refreshToken),
-                        () -> new Exception("일치하는 회원이 없습니다.")
-                );
+        Optional<User> byUsername = userRepository.findByUsername(username);
+        if (byUsername.isEmpty()) {
+            new Exception("일치하는 회원이 없습니다.");
+        }
+        log.info("RefreshToken 업데이트");
+        User user = byUsername.get();
+        user.updateRefreshToken(refreshToken);
+        userRepository.saveAndFlush(user);
     }
 
     public boolean isTokenValid(String token) {
