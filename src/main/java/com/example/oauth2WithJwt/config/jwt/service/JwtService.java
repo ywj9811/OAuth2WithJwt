@@ -2,16 +2,19 @@ package com.example.oauth2WithJwt.config.jwt.service;
 
 import com.auth0.jwt.JWT;
 import com.auth0.jwt.algorithms.Algorithm;
+import com.auth0.jwt.exceptions.TokenExpiredException;
 import com.example.oauth2WithJwt.domain.User;
 import com.example.oauth2WithJwt.repository.UserRepo;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.stereotype.Service;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
 import java.util.Date;
 import java.util.Optional;
 
@@ -55,7 +58,7 @@ public class JwtService {
         return JWT.create() // JWT 토큰을 생성하는 빌더 반환
                 .withSubject(ACCESS_TOKEN_SUBJECT) // JWT의 Subject 지정 -> AccessToken이므로 AccessToken
                 .withExpiresAt(new Date(now.getTime() + accessTokenExpirationPeriod)) // 토큰 만료 시간 설정
-
+                .withIssuedAt(new Date(now.getTime()))
                 //클레임으로는 저희는 username 하나만 사용합니다.
                 //추가적으로 식별자나, 이름 등의 정보를 더 추가하셔도 됩니다.
                 //추가하실 경우 .withClaim(클래임 이름, 클래임 값) 으로 설정해주시면 됩니다
@@ -72,6 +75,7 @@ public class JwtService {
         return JWT.create()
                 .withSubject(REFRESH_TOKEN_SUBJECT)
                 .withExpiresAt(new Date(now.getTime() + refreshTokenExpirationPeriod))
+                .withIssuedAt(new Date(now.getTime()))
                 .sign(Algorithm.HMAC512(secretKey));
     }
 
@@ -88,11 +92,12 @@ public class JwtService {
     /**
      * AccessToken + RefreshToken 헤더에 실어서 보내기
      */
-    public void sendAccessAndRefreshToken(HttpServletResponse response, String accessToken, String refreshToken) {
+    public void sendAccessAndRefreshToken(HttpServletResponse response, String accessToken, String refreshToken) throws IOException {
         response.setStatus(HttpServletResponse.SC_OK);
 
         setAccessTokenHeader(response, "Bearer " + accessToken);
         setRefreshTokenHeader(response, "Bearer " + refreshToken);
+        response.sendRedirect("/"); //"/"로 리다이렉트
         log.info("Access Token, Refresh Token 헤더 설정 완료");
     }
 
@@ -171,9 +176,15 @@ public class JwtService {
         try {
             JWT.require(Algorithm.HMAC512(secretKey)).build().verify(token);
             return true;
+        } catch (TokenExpiredException e) {
+            log.error("토큰 기한이 만료되었습니다 {}", e.getMessage());
+            throw new JwtException("토큰 기한이 만료되었습니다");
+        } catch (IllegalArgumentException e) {
+            log.error("JWT 토큰이 잘못되었습니다. {}", e.getMessage());
+            throw new JwtException("JWT 토큰이 잘못되었습니다.");
         } catch (Exception e) {
             log.error("유효하지 않은 토큰입니다. {}", e.getMessage());
-            return false;
+            throw new JwtException("JWT 예외 발생");
         }
     }
 }

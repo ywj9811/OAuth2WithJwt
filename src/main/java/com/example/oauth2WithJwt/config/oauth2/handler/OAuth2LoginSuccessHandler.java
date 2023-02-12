@@ -52,7 +52,7 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
         }
     }
 
-    private void loginSuccess(HttpServletResponse response, PrincipalDetails principalDetails) {
+    private void loginSuccess(HttpServletResponse response, PrincipalDetails principalDetails) throws IOException {
         String accessToken = jwtService.createAccessToken(principalDetails.getUsername());
         String refreshToken = jwtService.createRefreshToken();
 
