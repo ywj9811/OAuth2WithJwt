@@ -56,11 +56,11 @@ public class JwtAuthenticationProcessingFilter extends OncePerRequestFilter {
         String refreshToken = jwtService.extractRefreshToken(request)
                 .filter(jwtService::isTokenValid)
                 .orElse(null);
-
         // 리프레시 토큰이 요청 헤더에 존재했다면, 사용자가 AccessToken이 만료되어서
         // RefreshToken까지 보낸 것이므로 리프레시 토큰이 DB의 리프레시 토큰과 일치하는지 판단 후,
         // 일치한다면 AccessToken을 재발급해준다.
         if (refreshToken != null) {
+            log.info("RefreshToken업데이트 및 AccessToken 재발급");
             checkRefreshTokenAndReIssueAccessToken(response, refreshToken);
             return;
         }
@@ -141,11 +141,6 @@ public class JwtAuthenticationProcessingFilter extends OncePerRequestFilter {
      * setAuthentication()을 이용하여 위에서 만든 Authentication 객체에 대한 인증 허가 처리
     */
     public void saveAuthentication(User user) {
-        String password = user.getPassword();
-        if (password == null) { //소셜 로그인 유저의 비밀번호 설정하여 소셜 로그인 유저도 인증되도록 설정
-            password = "SocialLogin";
-        }
-
         PrincipalDetails principalDetails = new PrincipalDetails(user);
 
         Authentication authentication =
