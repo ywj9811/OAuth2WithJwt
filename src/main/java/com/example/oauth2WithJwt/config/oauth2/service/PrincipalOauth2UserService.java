@@ -37,7 +37,7 @@ public class PrincipalOauth2UserService extends DefaultOAuth2UserService {
         // userRequest 정보 -> 회원 프로필 받아야함 (loadUser함수) -> 회원 프로필 받음
 
         OAuth2User oAuth2User = super.loadUser(userRequest);
-        log.info("getAttribue = {}", oAuth2User);
+        log.info("getAttribue = {}", oAuth2User.getAttributes());
         // getAttribute에서 정보를 얻을 수 있음 -> 이를 통해서 자동 회원가입 등등의 과정을 가져갈 수 있다
         // oAuth2User 는 OAuth 서비스에서 가져온 유저의 정보를 담고 있다.
 

@@ -1,7 +1,6 @@
 package com.example.oauth2WithJwt.config.auth;
 
 import com.example.oauth2WithJwt.domain.User;
-import com.example.oauth2WithJwt.repository.UserRepo;
 import com.example.oauth2WithJwt.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.userdetails.UserDetails;

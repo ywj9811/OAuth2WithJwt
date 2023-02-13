@@ -1,9 +1,7 @@
 package com.example.oauth2WithJwt.config.oauth2.handler;
 
 import com.example.oauth2WithJwt.config.auth.PrincipalDetails;
-import com.example.oauth2WithJwt.config.auth.PrincipalDetailsService;
 import com.example.oauth2WithJwt.config.jwt.service.JwtService;
-import com.example.oauth2WithJwt.domain.User;
 import com.example.oauth2WithJwt.repository.UserRepo;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -15,7 +13,6 @@ import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.util.Optional;
 
 /**
  * OAuth2 로그인 성공시 로직 작성
