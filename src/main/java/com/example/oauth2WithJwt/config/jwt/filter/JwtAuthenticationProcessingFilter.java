@@ -3,10 +3,12 @@ package com.example.oauth2WithJwt.config.jwt.filter;
 import com.example.oauth2WithJwt.config.auth.PrincipalDetails;
 import com.example.oauth2WithJwt.config.jwt.service.JwtService;
 import com.example.oauth2WithJwt.domain.User;
+import com.example.oauth2WithJwt.repository.RedisRepo;
 import com.example.oauth2WithJwt.repository.UserRepo;
 import com.nimbusds.oauth2.sdk.dpop.verifiers.AccessTokenValidationException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.mapping.GrantedAuthoritiesMapper;
@@ -19,6 +21,7 @@ import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.Optional;
 
 /**
@@ -36,10 +39,13 @@ import java.util.Optional;
 @Slf4j
 public class JwtAuthenticationProcessingFilter extends OncePerRequestFilter {
 
+    @Value("${jwt.refresh.expiration}")
+    private Long refreshTokenExpiration;
     private static final String NOT_CHECK_URL = "/login";
 
     private final JwtService jwtService;
     private final UserRepo userRepo;
+    private final RedisRepo redisRepo;
 
     private GrantedAuthoritiesMapper authoritiesMapper = new NullAuthoritiesMapper();
 
@@ -57,6 +63,7 @@ public class JwtAuthenticationProcessingFilter extends OncePerRequestFilter {
         String refreshToken = jwtService.extractRefreshToken(request)
                 .filter(jwtService::isTokenValid)
                 .orElse(null);
+        Optional<String> username = jwtService.extractUsername(refreshToken);
         // 리프레시 토큰이 요청 헤더에 존재했다면, 사용자가 AccessToken이 만료되어서
         // RefreshToken까지 보낸 것이므로 리프레시 토큰이 DB의 리프레시 토큰과 일치하는지 판단 후,
         // 일치한다면 AccessToken을 재발급해준다.
@@ -94,19 +101,22 @@ public class JwtAuthenticationProcessingFilter extends OncePerRequestFilter {
      */
     public void checkRefreshTokenAndReIssueAccessToken(HttpServletRequest request, HttpServletResponse response, String refreshToken) throws IOException, AccessTokenValidationException {
         log.info("refreshToken 검사");
-        Optional<User> byRefreshToken = userRepo.findByRefreshToken(refreshToken);
-        if (byRefreshToken.isPresent()) {
-            log.info("refreshToken 업데이트 및 AccessToken 재발급 ");
-            User user = byRefreshToken.get();
-            String reIssuedRefreshToken = reIssueRefreshToken(user);
-            jwtService.sendAccessAndRefreshToken(response, jwtService.createAccessToken(user.getUsername()), reIssuedRefreshToken);
+        Optional<String> username = jwtService.extractUsername(refreshToken);
+        if (username.isPresent()) {
+            Optional<User> byUsername = userRepo.findByUsername(username.get());
+            if (byUsername.isPresent()) {
+                log.info("refreshToken 업데이트 및 AccessToken 재발급 ");
+//                User user = byUsername.get();
+                String reIssuedRefreshToken = reIssueRefreshToken(byUsername.get());
+                jwtService.sendAccessAndRefreshToken(response, jwtService.createAccessToken(username.get()), reIssuedRefreshToken);
 
-            //AccessToken 재발급 요청시 어떤 경로로 요청했는지 함께 리다이렉트 해줌 (헤더에 담아서)
-            String requestURI = request.getRequestURI();
-            log.info("requestURI : {}", requestURI);
-            response.setHeader("requestUrl", requestURI);   
+                //AccessToken 재발급 요청시 어떤 경로로 요청했는지 함께 리다이렉트 해줌 (헤더에 담아서)
+                String requestURI = request.getRequestURI();
+                log.info("requestURI : {}", requestURI);
+                response.setHeader("requestUrl", requestURI);
 
-            return;
+                return;
+            }
         }
         log.error("refreshToken값이 잘못되었습니다. 요청 확인 바람");
         throw new AccessTokenValidationException("RefreshToken 값 불일치");
@@ -118,9 +128,14 @@ public class JwtAuthenticationProcessingFilter extends OncePerRequestFilter {
      * DB에 재발급한 리프레시 토큰 업데이트 후 Flush
      */
     private String reIssueRefreshToken(User user) {
-        String reIssuedRefreshToken = jwtService.createRefreshToken();
-        user.updateRefreshToken(reIssuedRefreshToken);
-        userRepo.saveAndFlush(user);
+        String reIssuedRefreshToken = jwtService.createRefreshToken(user.getUsername());
+//        user.updateRefreshToken(reIssuedRefreshToken);
+//        userRepo.saveAndFlush(user);
+        /**
+         * Redis 사용 수정
+         */
+        redisRepo.setValues(user.getUsername(), reIssuedRefreshToken, Duration.ofDays(refreshTokenExpiration));
+        /////////////////////////////
         return reIssuedRefreshToken;
     }
 

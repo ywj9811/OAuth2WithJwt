@@ -9,11 +9,13 @@ import com.example.oauth2WithJwt.config.login.handler.LoginSuccessHandler;
 import com.example.oauth2WithJwt.config.oauth2.handler.OAuth2LoginFailureHandler;
 import com.example.oauth2WithJwt.config.oauth2.handler.OAuth2LoginSuccessHandler;
 import com.example.oauth2WithJwt.config.oauth2.service.PrincipalOauth2UserService;
+import com.example.oauth2WithJwt.repository.RedisRepo;
 import com.example.oauth2WithJwt.repository.UserRepo;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.ProviderManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -31,6 +33,8 @@ import org.springframework.security.web.authentication.logout.LogoutFilter;
 @RequiredArgsConstructor
 public class SecurityConfig extends WebSecurityConfigurerAdapter {
     private final UserRepo userRepo;
+    private final RedisTemplate<String, String> redisTemplate;
+    private final RedisRepo redisRepo;
     private final PrincipalDetailsService principalDetailsService;
     private final BCryptPasswordEncoder bCryptPasswordEncoder;
     private final PrincipalOauth2UserService principalOauth2UserService;
@@ -59,7 +63,7 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
      */
     @Bean
     public LoginSuccessHandler loginSuccessHandler() {
-        return new LoginSuccessHandler(jwtService, userRepo);
+        return new LoginSuccessHandler(jwtService, userRepo, redisRepo);
     }
 
     /**
@@ -89,7 +93,7 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
 
     @Bean
     public JwtAuthenticationProcessingFilter jwtAuthenticationProcessingFilter() {
-        JwtAuthenticationProcessingFilter jwtAuthenticationFilter = new JwtAuthenticationProcessingFilter(jwtService, userRepo);
+        JwtAuthenticationProcessingFilter jwtAuthenticationFilter = new JwtAuthenticationProcessingFilter(jwtService, userRepo, redisRepo);
         return jwtAuthenticationFilter;
     }
 

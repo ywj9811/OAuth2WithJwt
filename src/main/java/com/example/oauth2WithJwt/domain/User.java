@@ -37,13 +37,13 @@ public class User {
     @CreationTimestamp
     private Timestamp createDate;
 
-    private String refreshToken;
+//    private String refreshToken;
 
     public void userRoleSet() {
         this.role = "ROLE_USER";
     }
 
-    public void updateRefreshToken(String refreshToken) {
-        this.refreshToken = refreshToken;
-    }
+//    public void updateRefreshToken(String refreshToken) {
+//        this.refreshToken = refreshToken;
+//    }
 }

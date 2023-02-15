@@ -4,6 +4,7 @@ import com.auth0.jwt.JWT;
 import com.auth0.jwt.algorithms.Algorithm;
 import com.auth0.jwt.exceptions.TokenExpiredException;
 import com.example.oauth2WithJwt.domain.User;
+import com.example.oauth2WithJwt.repository.RedisRepo;
 import com.example.oauth2WithJwt.repository.UserRepo;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
@@ -15,6 +16,7 @@ import org.springframework.stereotype.Service;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.Date;
 import java.util.Optional;
 
@@ -50,6 +52,7 @@ public class JwtService {
 
     private final UserRepo userRepository;
 
+    private final RedisRepo redisRepo;
     /**
      * AccessToken 생성 메소드
      */
@@ -70,12 +73,13 @@ public class JwtService {
      * RefreshToken 생성
      * RefreshToken은 Claim에 username도 넣지 않으므로 withClaim() X
      */
-    public String createRefreshToken() {
+    public String createRefreshToken(String username) {
         Date now = new Date();
         return JWT.create()
                 .withSubject(REFRESH_TOKEN_SUBJECT)
                 .withExpiresAt(new Date(now.getTime() + refreshTokenExpirationPeriod))
                 .withIssuedAt(new Date(now.getTime()))
+                .withClaim("username", username)
                 .sign(Algorithm.HMAC512(secretKey));
     }
 
@@ -166,9 +170,13 @@ public class JwtService {
             new Exception("일치하는 회원이 없습니다.");
         }
         log.info("RefreshToken 업데이트");
-        User user = byUsername.get();
-        user.updateRefreshToken(refreshToken);
-        userRepository.saveAndFlush(user);
+//        User user = byUsername.get();
+//        user.updateRefreshToken(refreshToken);
+//        userRepository.saveAndFlush(user);
+        /**
+         * Redis 사용
+         */
+        redisRepo.setValues(username, refreshToken, Duration.ofDays(refreshTokenExpirationPeriod));
     }
 
     public boolean isTokenValid(String token) {
