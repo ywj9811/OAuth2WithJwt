@@ -4,6 +4,7 @@ import com.example.oauth2WithJwt.config.auth.PrincipalDetails;
 import com.example.oauth2WithJwt.config.jwt.service.JwtService;
 import com.example.oauth2WithJwt.domain.User;
 import com.example.oauth2WithJwt.repository.UserRepo;
+import com.nimbusds.oauth2.sdk.dpop.verifiers.AccessTokenValidationException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -35,7 +36,7 @@ import java.util.Optional;
 @Slf4j
 public class JwtAuthenticationProcessingFilter extends OncePerRequestFilter {
 
-    private static final String NOT_CHECK_URL = "/login/**";
+    private static final String NOT_CHECK_URL = "/login";
 
     private final JwtService jwtService;
     private final UserRepo userRepo;
@@ -60,8 +61,13 @@ public class JwtAuthenticationProcessingFilter extends OncePerRequestFilter {
         // RefreshToken까지 보낸 것이므로 리프레시 토큰이 DB의 리프레시 토큰과 일치하는지 판단 후,
         // 일치한다면 AccessToken을 재발급해준다.
         if (refreshToken != null) {
-            log.info("RefreshToken업데이트 및 AccessToken 재발급");
-            checkRefreshTokenAndReIssueAccessToken(response, refreshToken);
+            try {
+                checkRefreshTokenAndReIssueAccessToken(request, response, refreshToken);
+            } catch (AccessTokenValidationException e) {
+                e.printStackTrace();
+                response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+                response.getWriter().write("토큰 값 비정상");
+            }
             return;
         }
 
@@ -69,7 +75,13 @@ public class JwtAuthenticationProcessingFilter extends OncePerRequestFilter {
         // AccessToken이 없거나 유효하지 않다면, 인증 객체가 담기지 않은 상태로 다음 필터로 넘어가기 때문에 403 에러 발생
         // AccessToken이 유효하다면, 인증 객체가 담긴 상태로 다음 필터로 넘어가기 때문에 인증 성공
         if (refreshToken == null) {
-            checkAccessTokenAndAuthentication(request, response, filterChain);
+            try {
+                checkAccessTokenAndAuthentication(request, response, filterChain);
+            } catch (AccessTokenValidationException e) {
+                e.printStackTrace();
+                response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+                response.getWriter().write("AccessToken 비정상");
+            }
         }
     }
 
@@ -80,13 +92,24 @@ public class JwtAuthenticationProcessingFilter extends OncePerRequestFilter {
      *  reIssueRefreshToken()로 리프레시 토큰 재발급 & DB에 리프레시 토큰 업데이트 메소드 호출
      *  그 후 JwtService.sendAccessTokenAndRefreshToken()으로 응답 헤더에 보내기
      */
-    public void checkRefreshTokenAndReIssueAccessToken(HttpServletResponse response, String refreshToken) throws IOException {
+    public void checkRefreshTokenAndReIssueAccessToken(HttpServletRequest request, HttpServletResponse response, String refreshToken) throws IOException, AccessTokenValidationException {
+        log.info("refreshToken 검사");
         Optional<User> byRefreshToken = userRepo.findByRefreshToken(refreshToken);
         if (byRefreshToken.isPresent()) {
+            log.info("refreshToken 업데이트 및 AccessToken 재발급 ");
             User user = byRefreshToken.get();
             String reIssuedRefreshToken = reIssueRefreshToken(user);
             jwtService.sendAccessAndRefreshToken(response, jwtService.createAccessToken(user.getUsername()), reIssuedRefreshToken);
+
+            //AccessToken 재발급 요청시 어떤 경로로 요청했는지 함께 리다이렉트 해줌 (헤더에 담아서)
+            String requestURI = request.getRequestURI();
+            log.info("requestURI : {}", requestURI);
+            response.setHeader("requestUrl", requestURI);   
+
+            return;
         }
+        log.error("refreshToken값이 잘못되었습니다. 요청 확인 바람");
+        throw new AccessTokenValidationException("RefreshToken 값 불일치");
     }
 
     /**
@@ -109,7 +132,7 @@ public class JwtAuthenticationProcessingFilter extends OncePerRequestFilter {
      * 인증 허가 처리된 객체를 SecurityContextHolder에 담기
      * 그 후 다음 인증 필터로 진행
      */
-    public void checkAccessTokenAndAuthentication(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException {
+    public void checkAccessTokenAndAuthentication(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException, AccessTokenValidationException {
         log.info("checkAccessTokenAndAuthentication() 호출");
         Optional<String> accessToken = jwtService.extractAccessToken(request)
                 .filter(jwtService::isTokenValid);
@@ -119,10 +142,13 @@ public class JwtAuthenticationProcessingFilter extends OncePerRequestFilter {
                 Optional<User> user = userRepo.findByUsername(username.get());
                 if (user.isPresent()) {
                     saveAuthentication(user.get());
+                    filterChain.doFilter(request, response);
+                    return;
                 }
             }
         }
-        filterChain.doFilter(request, response);
+        log.error("AccessToken 비정상");
+        throw new AccessTokenValidationException("AccessToken 비정상");
     }
 
     /**
