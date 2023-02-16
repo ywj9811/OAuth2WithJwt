@@ -6,6 +6,8 @@ import com.auth0.jwt.exceptions.TokenExpiredException;
 import com.example.oauth2WithJwt.domain.User;
 import com.example.oauth2WithJwt.repository.RedisRepo;
 import com.example.oauth2WithJwt.repository.UserRepo;
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.Jwts;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -53,6 +55,42 @@ public class JwtService {
     private final UserRepo userRepository;
 
     private final RedisRepo redisRepo;
+
+    /**
+     * Redis 사용 로그아웃 : AccessToken 블랙 리스트 및 RefershToken 삭제
+     */
+    public boolean logout(HttpServletRequest request, Long userIdx) {
+        Optional<String> optionalAccessToken = extractAccessToken(request);
+        if (optionalAccessToken.isEmpty())
+            throw new JwtException("AccessToken이 올바르지 않습니다.");
+        String accessToken = optionalAccessToken.get();
+        try {
+            JWT.require(Algorithm.HMAC512(secretKey)).build().verify(accessToken);
+            Long expiration = getExpiration(accessToken);
+            log.info("AccessToken 블랙리스트 등록 {}", accessToken);
+            redisRepo.setValues(accessToken, "logout", Duration.ofMillis(expiration));
+        } catch (TokenExpiredException e) {
+            log.info("토큰 기한이 만료되었습니다 {}", e.getMessage());
+        } catch (IllegalArgumentException e) {
+            log.error("JWT 토큰이 잘못되었습니다. {}", e.getMessage());
+            throw new JwtException("JWT 토큰이 잘못되었습니다.");
+        } catch (Exception e) {
+            log.error("유효하지 않은 토큰입니다. {}", e.getMessage());
+            e.printStackTrace();
+            throw new JwtException("JWT 예외 발생");
+        }
+
+        log.info("userIdx = {}", userIdx);
+        User user = userRepository.findById(userIdx).get();
+
+        Optional<String> refreshToken = redisRepo.getValues(user.getUsername());
+        if (!refreshToken.isEmpty()) {
+            redisRepo.deleteValues(user.getUsername());
+        }
+
+        return true;
+    }
+
     /**
      * AccessToken 생성 메소드
      */
@@ -147,6 +185,13 @@ public class JwtService {
         }
     }
 
+    private Claims extractClaims(String accessToken) {
+        return Jwts.parser().
+                setSigningKey(secretKey).
+                parseClaimsJws(accessToken).
+                getBody();
+    }
+
     /**
      * AccessToken 헤더 설정
      */
@@ -176,7 +221,7 @@ public class JwtService {
         /**
          * Redis 사용
          */
-        redisRepo.setValues(username, refreshToken, Duration.ofDays(refreshTokenExpirationPeriod));
+        redisRepo.setValues(username, refreshToken, Duration.ofMillis(refreshTokenExpirationPeriod));
     }
 
     public boolean isTokenValid(String token) {
@@ -193,5 +238,14 @@ public class JwtService {
             log.error("유효하지 않은 토큰입니다. {}", e.getMessage());
             throw new JwtException("JWT 예외 발생");
         }
+    }
+
+    //accessToken 남은 시간 계산
+    public Long getExpiration(String accessToken) {
+        Date expiration = JWT.decode(accessToken).getExpiresAt();
+
+        Long now = new Date().getTime();
+
+        return (expiration.getTime() - now);
     }
 }

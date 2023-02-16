@@ -1,6 +1,7 @@
 package com.example.oauth2WithJwt.controller;
 
 import com.example.oauth2WithJwt.config.auth.PrincipalDetails;
+import com.example.oauth2WithJwt.config.jwt.service.JwtService;
 import com.example.oauth2WithJwt.dto.UserDto;
 import com.example.oauth2WithJwt.service.UserService;
 import lombok.RequiredArgsConstructor;
@@ -11,6 +12,12 @@ import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.web.context.request.ServletRequestAttributes;
+
+import javax.servlet.ServletRequest;
+import javax.servlet.ServletRequestWrapper;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletRequestWrapper;
 
 @Controller
 @Slf4j
@@ -18,6 +25,7 @@ import org.springframework.web.bind.annotation.ResponseBody;
 public class UserController {
     private final UserService userService;
     private final BCryptPasswordEncoder bCryptPasswordEncoder;
+    private final JwtService jwtService;
 
     @GetMapping("/user")
     @ResponseBody
@@ -61,5 +69,15 @@ public class UserController {
     @GetMapping("/SnsLogin")
     public String getSnsLoginForm() {
         return "SnsLogin.html";
+    }
+
+    @PostMapping("/out")
+    @ResponseBody
+    public String logout(HttpServletRequest request, Long userIdx) {
+        log.info("accessToken = {}", request.getHeader("Authorization"));
+        boolean logout = jwtService.logout(request, userIdx);
+        if (logout)
+            return "로그아웃";
+        return "오류 발생";
     }
 }

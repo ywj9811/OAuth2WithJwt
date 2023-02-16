@@ -42,6 +42,7 @@ public class JwtAuthenticationProcessingFilter extends OncePerRequestFilter {
     @Value("${jwt.refresh.expiration}")
     private Long refreshTokenExpiration;
     private static final String NOT_CHECK_URL = "/login";
+    private static final String NOT_CHECK_URL2 = "/out";
 
     private final JwtService jwtService;
     private final UserRepo userRepo;
@@ -51,10 +52,11 @@ public class JwtAuthenticationProcessingFilter extends OncePerRequestFilter {
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException {
-        if (request.getRequestURI().equals(NOT_CHECK_URL)) {
+        if (request.getRequestURI().equals(NOT_CHECK_URL) || request.getRequestURI().equals(NOT_CHECK_URL2)) {
             filterChain.doFilter(request, response);
             return; //처리X 요청의 경우 다음 필터로 넘기고 return을 통해 현재 필터 진행 정지
         }
+        log.info("권한 검사 시작");
 
         // 사용자 요청 헤더에서 RefreshToken 추출
         // -> RefreshToken이 없거나 유효하지 않다면(DB에 저장된 RefreshToken과 다르다면) null을 반환
@@ -63,7 +65,7 @@ public class JwtAuthenticationProcessingFilter extends OncePerRequestFilter {
         String refreshToken = jwtService.extractRefreshToken(request)
                 .filter(jwtService::isTokenValid)
                 .orElse(null);
-        Optional<String> username = jwtService.extractUsername(refreshToken);
+
         // 리프레시 토큰이 요청 헤더에 존재했다면, 사용자가 AccessToken이 만료되어서
         // RefreshToken까지 보낸 것이므로 리프레시 토큰이 DB의 리프레시 토큰과 일치하는지 판단 후,
         // 일치한다면 AccessToken을 재발급해준다.
@@ -83,6 +85,7 @@ public class JwtAuthenticationProcessingFilter extends OncePerRequestFilter {
         // AccessToken이 유효하다면, 인증 객체가 담긴 상태로 다음 필터로 넘어가기 때문에 인증 성공
         if (refreshToken == null) {
             try {
+                log.info("AccessToken 검사 진행");
                 checkAccessTokenAndAuthentication(request, response, filterChain);
             } catch (AccessTokenValidationException e) {
                 e.printStackTrace();
@@ -105,17 +108,18 @@ public class JwtAuthenticationProcessingFilter extends OncePerRequestFilter {
         if (username.isPresent()) {
             Optional<User> byUsername = userRepo.findByUsername(username.get());
             if (byUsername.isPresent()) {
-                log.info("refreshToken 업데이트 및 AccessToken 재발급 ");
-//                User user = byUsername.get();
-                String reIssuedRefreshToken = reIssueRefreshToken(byUsername.get());
-                jwtService.sendAccessAndRefreshToken(response, jwtService.createAccessToken(username.get()), reIssuedRefreshToken);
+                if (!redisRepo.getValues(byUsername.get().getUsername()).isEmpty()) {
+                    log.info("refreshToken 업데이트 및 AccessToken 재발급 ");
+                    String reIssuedRefreshToken = reIssueRefreshToken(byUsername.get());
+                    jwtService.sendAccessAndRefreshToken(response, jwtService.createAccessToken(username.get()), reIssuedRefreshToken);
 
-                //AccessToken 재발급 요청시 어떤 경로로 요청했는지 함께 리다이렉트 해줌 (헤더에 담아서)
-                String requestURI = request.getRequestURI();
-                log.info("requestURI : {}", requestURI);
-                response.setHeader("requestUrl", requestURI);
+                    //AccessToken 재발급 요청시 어떤 경로로 요청했는지 함께 보내줌 (헤더에 담아서)
+                    String requestURI = request.getRequestURI();
+                    log.info("requestURI : {}", requestURI);
+                    response.setHeader("requestUrl", requestURI);
 
-                return;
+                    return;
+                }
             }
         }
         log.error("refreshToken값이 잘못되었습니다. 요청 확인 바람");
@@ -134,7 +138,7 @@ public class JwtAuthenticationProcessingFilter extends OncePerRequestFilter {
         /**
          * Redis 사용 수정
          */
-        redisRepo.setValues(user.getUsername(), reIssuedRefreshToken, Duration.ofDays(refreshTokenExpiration));
+        redisRepo.setValues(user.getUsername(), reIssuedRefreshToken, Duration.ofMillis(refreshTokenExpiration));
         /////////////////////////////
         return reIssuedRefreshToken;
     }
@@ -152,15 +156,22 @@ public class JwtAuthenticationProcessingFilter extends OncePerRequestFilter {
         Optional<String> accessToken = jwtService.extractAccessToken(request)
                 .filter(jwtService::isTokenValid);
         if (accessToken.isPresent()) {
-            Optional<String> username = jwtService.extractUsername(accessToken.get());
-            if (username.isPresent()) {
-                Optional<User> user = userRepo.findByUsername(username.get());
-                if (user.isPresent()) {
-                    saveAuthentication(user.get());
-                    filterChain.doFilter(request, response);
-                    return;
+            log.info("----------------------------------------------------");
+            log.info("AccessToken.value = {}", redisRepo.getValues(accessToken.get()));
+            log.info("----------------------------------------------------");
+            if (!redisRepo.getValues(accessToken.get()).isPresent()) {
+                Optional<String> username = jwtService.extractUsername(accessToken.get());
+                if (username.isPresent()) {
+                    Optional<User> user = userRepo.findByUsername(username.get());
+                    if (user.isPresent()) {
+                        saveAuthentication(user.get());
+                        filterChain.doFilter(request, response);
+                        return;
+                    }
                 }
+                log.error("username이 없음");
             }
+            log.error("블랙리스트 등록 accessToken 접근");
         }
         log.error("AccessToken 비정상");
         throw new AccessTokenValidationException("AccessToken 비정상");

@@ -49,8 +49,7 @@ public class LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHandler {
             /**
              * Redis 사용 수정
              */
-            redisRepo.setValues(username, refreshToken, Duration.ofDays(refreshTokenExpiration));
-            /////////////////////////////
+            jwtService.updateRefreshToken(username, refreshToken);
         }
         log.info("로그인 성공 username : {}", username);
         log.info("로그인 성공 AccessToken : {}", accessToken);
