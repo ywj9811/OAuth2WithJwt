@@ -3,8 +3,10 @@ package com.example.oauth2WithJwt.config.jwt.filter;
 import com.example.oauth2WithJwt.config.auth.PrincipalDetails;
 import com.example.oauth2WithJwt.config.jwt.service.JwtService;
 import com.example.oauth2WithJwt.domain.User;
+import com.example.oauth2WithJwt.dto.Response;
 import com.example.oauth2WithJwt.repository.RedisRepo;
 import com.example.oauth2WithJwt.repository.UserRepo;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.oauth2.sdk.dpop.verifiers.AccessTokenValidationException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,7 +23,10 @@ import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.time.Duration;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -41,8 +46,7 @@ public class JwtAuthenticationProcessingFilter extends OncePerRequestFilter {
 
     @Value("${jwt.refresh.expiration}")
     private Long refreshTokenExpiration;
-    private static final String NOT_CHECK_URL = "/login";
-    private static final String NOT_CHECK_URL2 = "/out";
+    private static final List<String> NOT_CHECK_URLS = Arrays.asList(new String[]{"/login", "/out", "/loginForm", "/join", "/joinForm", "/SnsLogin"});
 
     private final JwtService jwtService;
     private final UserRepo userRepo;
@@ -52,7 +56,8 @@ public class JwtAuthenticationProcessingFilter extends OncePerRequestFilter {
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException {
-        if (request.getRequestURI().equals(NOT_CHECK_URL) || request.getRequestURI().equals(NOT_CHECK_URL2)) {
+        if (NOT_CHECK_URLS.contains(request.getRequestURI()) || request.getRequestURI().contains("/oauth2")) {
+//        if(request.getHeader("Authorization") == null) {
             filterChain.doFilter(request, response);
             return; //처리X 요청의 경우 다음 필터로 넘기고 return을 통해 현재 필터 진행 정지
         }
@@ -104,6 +109,8 @@ public class JwtAuthenticationProcessingFilter extends OncePerRequestFilter {
      */
     public void checkRefreshTokenAndReIssueAccessToken(HttpServletRequest request, HttpServletResponse response, String refreshToken) throws IOException, AccessTokenValidationException {
         log.info("refreshToken 검사");
+        ObjectMapper objectMapper = new ObjectMapper();
+
         Optional<String> username = jwtService.extractUsername(refreshToken);
         if (username.isPresent()) {
             Optional<User> byUsername = userRepo.findByUsername(username.get());
@@ -117,7 +124,11 @@ public class JwtAuthenticationProcessingFilter extends OncePerRequestFilter {
                     String requestURI = request.getRequestURI();
                     log.info("requestURI : {}", requestURI);
                     response.setHeader("requestUrl", requestURI);
+                    Response res = new Response(200,"Success");
 
+                    PrintWriter writer = response.getWriter();
+                    writer.write(objectMapper.writeValueAsString(res));
+                    writer.flush();
                     return;
                 }
             }
@@ -129,7 +140,6 @@ public class JwtAuthenticationProcessingFilter extends OncePerRequestFilter {
     /**
      * [리프레시 토큰 재발급 & DB에 리프레시 토큰 업데이트 메소드]
      * jwtService.createRefreshToken()으로 리프레시 토큰 재발급 후
-     * DB에 재발급한 리프레시 토큰 업데이트 후 Flush
      */
     private String reIssueRefreshToken(User user) {
         String reIssuedRefreshToken = jwtService.createRefreshToken(user.getUsername());
@@ -174,6 +184,7 @@ public class JwtAuthenticationProcessingFilter extends OncePerRequestFilter {
             log.error("블랙리스트 등록 accessToken 접근");
         }
         log.error("AccessToken 비정상");
+        log.info("RequestUri = {}", request.getRequestURI());
         throw new AccessTokenValidationException("AccessToken 비정상");
     }
 

@@ -6,8 +6,6 @@ import com.auth0.jwt.exceptions.TokenExpiredException;
 import com.example.oauth2WithJwt.domain.User;
 import com.example.oauth2WithJwt.repository.RedisRepo;
 import com.example.oauth2WithJwt.repository.UserRepo;
-import io.jsonwebtoken.Claims;
-import io.jsonwebtoken.Jwts;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -50,6 +48,7 @@ public class JwtService {
     private static final String ACCESS_TOKEN_SUBJECT = "AccessToken";
     private static final String REFRESH_TOKEN_SUBJECT = "RefreshToken";
     private static final String USERNAME_CLAIM = "username";
+    private static final String USERIDX_CLAIM = "userIdx";
     private static final String BEARER = "Bearer ";
 
     private final UserRepo userRepository;
@@ -96,6 +95,7 @@ public class JwtService {
      */
     public String createAccessToken(String username) {
         Date now = new Date();
+        User user = userRepository.findByUsername(username).get();
         return JWT.create() // JWT 토큰을 생성하는 빌더 반환
                 .withSubject(ACCESS_TOKEN_SUBJECT) // JWT의 Subject 지정 -> AccessToken이므로 AccessToken
                 .withExpiresAt(new Date(now.getTime() + accessTokenExpirationPeriod)) // 토큰 만료 시간 설정
@@ -104,6 +104,7 @@ public class JwtService {
                 //추가적으로 식별자나, 이름 등의 정보를 더 추가하셔도 됩니다.
                 //추가하실 경우 .withClaim(클래임 이름, 클래임 값) 으로 설정해주시면 됩니다
                 .withClaim(USERNAME_CLAIM, username)
+                .withClaim(USERIDX_CLAIM, user.getUserIdx())
                 .sign(Algorithm.HMAC512(secretKey)); // HMAC512 알고리즘 사용, application.yml에서 지정한 secret 키로 암호화
     }
 
@@ -117,7 +118,7 @@ public class JwtService {
                 .withSubject(REFRESH_TOKEN_SUBJECT)
                 .withExpiresAt(new Date(now.getTime() + refreshTokenExpirationPeriod))
                 .withIssuedAt(new Date(now.getTime()))
-                .withClaim("username", username)
+                .withClaim(USERNAME_CLAIM, username)
                 .sign(Algorithm.HMAC512(secretKey));
     }
 
@@ -183,13 +184,6 @@ public class JwtService {
             log.error("액세스 토큰이 유효하지 않습니다.");
             return Optional.empty();
         }
-    }
-
-    private Claims extractClaims(String accessToken) {
-        return Jwts.parser().
-                setSigningKey(secretKey).
-                parseClaimsJws(accessToken).
-                getBody();
     }
 
     /**

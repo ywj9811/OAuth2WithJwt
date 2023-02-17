@@ -2,6 +2,8 @@ package com.example.oauth2WithJwt.controller;
 
 import com.example.oauth2WithJwt.config.auth.PrincipalDetails;
 import com.example.oauth2WithJwt.config.jwt.service.JwtService;
+import com.example.oauth2WithJwt.domain.User;
+import com.example.oauth2WithJwt.dto.Response;
 import com.example.oauth2WithJwt.dto.UserDto;
 import com.example.oauth2WithJwt.service.UserService;
 import lombok.RequiredArgsConstructor;
@@ -18,6 +20,9 @@ import javax.servlet.ServletRequest;
 import javax.servlet.ServletRequestWrapper;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletRequestWrapper;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Optional;
 
 @Controller
 @Slf4j
@@ -27,25 +32,40 @@ public class UserController {
     private final BCryptPasswordEncoder bCryptPasswordEncoder;
     private final JwtService jwtService;
 
+    private Response response = new Response();
+
+
     @GetMapping("/user")
     @ResponseBody
-    public String loginFin(@AuthenticationPrincipal PrincipalDetails principalDetails) {
+    public Response loginFin(@AuthenticationPrincipal PrincipalDetails principalDetails) {
         log.info("principalDetails = {}", principalDetails);
-        return "user";
+        response.setCode(200);
+        response.setMessage("Success");
+        response.setResult("user");
+
+        return response;
     }
 
     @GetMapping("/manager")
     @ResponseBody
-    public String manager(@AuthenticationPrincipal PrincipalDetails principalDetails) {
+    public Response manager(@AuthenticationPrincipal PrincipalDetails principalDetails) {
         log.info("principalDetails = {}", principalDetails);
-        return "manager";
+        response.setCode(200);
+        response.setMessage("Success");
+        response.setResult("manager");
+
+        return response;
     }
 
     @GetMapping("/admin")
     @ResponseBody
-    public String admin(@AuthenticationPrincipal PrincipalDetails principalDetails) {
+    public Response admin(@AuthenticationPrincipal PrincipalDetails principalDetails) {
         log.info("principalDetails = {}", principalDetails);
-        return "admin";
+        response.setCode(200);
+        response.setMessage("Success");
+        response.setResult("admin");
+
+        return response;
     }
 
     @PostMapping("/join")
@@ -73,11 +93,36 @@ public class UserController {
 
     @PostMapping("/out")
     @ResponseBody
-    public String logout(HttpServletRequest request, Long userIdx) {
+    public Response logout(HttpServletRequest request, Long userIdx) {
         log.info("accessToken = {}", request.getHeader("Authorization"));
         boolean logout = jwtService.logout(request, userIdx);
-        if (logout)
-            return "로그아웃";
-        return "오류 발생";
+        if (logout) {
+            response.setMessage("Success");
+            response.setCode(200);
+            return response;
+        }
+        response.setMessage("Fail");
+        response.setCode(500);
+        return response;
+    }
+
+    @GetMapping("/user/myPage")
+    @ResponseBody
+    public Map<String, Object> myPage(HttpServletRequest request) {
+        Optional<String> accessToekn = jwtService.extractAccessToken(request);
+        if (accessToekn.isEmpty()) {
+            return null;
+        }
+        Optional<String> username = jwtService.extractUsername(accessToekn.get());
+
+        User user = userService.findByUsername(username.get());
+        Map<String, Object> response = new HashMap<>();
+
+        UserDto userDto = new UserDto(user.getUsername(), user.getPassword(), user.getEmail());
+        response.put("user", userDto);
+        response.put("code", 200);
+        response.put("message", "success");
+
+        return response;
     }
 }
